@@ -1,7 +1,14 @@
+import {
+  createEmergencyAlertInDb,
+  createNotificationInDb,
+  deleteNotificationFromDb,
+  fetchEmergencyAlertsFromDb,
+  fetchNotificationsFromDb,
+  updateNotificationInDb
+} from '@/services/database';
+import { EmergencyAlert, Notification, NotificationStatus, NotificationType } from '@/types';
 import createContextHook from '@nkzw/create-context-hook';
-import { useCallback, useState } from 'react';
-import { Notification, NotificationStatus, NotificationType, EmergencyAlert } from '@/types';
-import { MOCK_NOTIFICATIONS } from '@/mocks/data';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from './auth';
 
 interface CreateNotificationData {
@@ -18,59 +25,103 @@ interface CreateNotificationData {
 
 export const [NotificationsProvider, useNotifications] = createContextHook(() => {
   const { user } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [emergencyAlerts, setEmergencyAlerts] = useState<EmergencyAlert[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const createNotification = useCallback((data: CreateNotificationData): Notification => {
+  const refreshNotifications = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [notificationsData, emergencyAlertsData] = await Promise.all([
+        fetchNotificationsFromDb(),
+        fetchEmergencyAlertsFromDb(),
+      ]);
+      setNotifications(notificationsData);
+      setEmergencyAlerts(emergencyAlertsData);
+    } catch (error) {
+      console.error("Failed to fetch notifications or alerts", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshNotifications();
+  }, [refreshNotifications]);
+
+  const createNotification = useCallback(async (data: CreateNotificationData): Promise<Notification> => {
     if (!user) throw new Error('User not authenticated');
 
-    const newNotification: Notification = {
-      id: Date.now().toString(),
+    const timestamp = new Date().toISOString();
+    const newNotificationData: Omit<Notification, 'id'> = {
       ...data,
       status: 'open',
       createdBy: user.id,
       createdByName: user.fullName,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: timestamp,
+      updatedAt: timestamp,
       followedBy: [user.id],
     };
+
+    const id = await createNotificationInDb(newNotificationData);
+    const newNotification: Notification = { id, ...newNotificationData };
 
     setNotifications(prev => [newNotification, ...prev]);
     return newNotification;
   }, [user]);
 
-  const updateNotificationStatus = useCallback((id: string, status: NotificationStatus) => {
-    setNotifications(prev =>
-      prev.map(n =>
-        n.id === id
-          ? { ...n, status, updatedAt: new Date().toISOString() }
-          : n
-      )
-    );
+  const updateNotificationStatus = useCallback(async (id: string, status: NotificationStatus) => {
+    try {
+      await updateNotificationInDb(id, { status, updatedAt: new Date().toISOString() });
+      setNotifications(prev =>
+        prev.map(n =>
+          n.id === id
+            ? { ...n, status, updatedAt: new Date().toISOString() }
+            : n
+        )
+      );
+    } catch (error) {
+      console.error("Failed to update status", error);
+      throw error;
+    }
   }, []);
 
-  const updateNotification = useCallback((id: string, updates: Partial<Notification>) => {
-    setNotifications(prev =>
-      prev.map(n =>
-        n.id === id
-          ? { ...n, ...updates, updatedAt: new Date().toISOString() }
-          : n
-      )
-    );
+  const updateNotification = useCallback(async (id: string, updates: Partial<Notification>) => {
+    try {
+      const timestamp = new Date().toISOString();
+      await updateNotificationInDb(id, { ...updates, updatedAt: timestamp });
+      setNotifications(prev =>
+        prev.map(n =>
+          n.id === id
+            ? { ...n, ...updates, updatedAt: timestamp }
+            : n
+        )
+      );
+    } catch (error) {
+      console.error("Failed to update notification", error);
+      throw error;
+    }
   }, []);
 
-  const deleteNotification = useCallback((id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+  const deleteNotification = useCallback(async (id: string) => {
+    try {
+      await deleteNotificationFromDb(id);
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    } catch (error) {
+      console.error("Failed to delete notification", error);
+      throw error;
+    }
   }, []);
 
-  const toggleFollow = useCallback((notificationId: string) => {
+  const toggleFollow = useCallback(async (notificationId: string) => {
     if (!user) return;
 
+    // Optimistic update
+    let isFollowing = false;
     setNotifications(prev =>
       prev.map(n => {
         if (n.id !== notificationId) return n;
-
-        const isFollowing = n.followedBy.includes(user.id);
+        isFollowing = n.followedBy.includes(user.id);
         return {
           ...n,
           followedBy: isFollowing
@@ -79,23 +130,46 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
         };
       })
     );
-  }, [user]);
 
-  const createEmergencyAlert = useCallback((title: string, message: string) => {
+    try {
+      const notification = notifications.find(n => n.id === notificationId);
+      if (!notification) return; // Should not happen given local state
+
+      const currentFollowers = notification.followedBy;
+      const newFollowers = isFollowing
+        ? currentFollowers.filter(id => id !== user.id)
+        : [...currentFollowers, user.id];
+
+      await updateNotificationInDb(notificationId, { followedBy: newFollowers });
+    } catch (error) {
+      console.error("Failed to toggle follow", error);
+      // Revert on error could be implemented here
+      refreshNotifications();
+    }
+  }, [user, notifications, refreshNotifications]);
+
+  const createEmergencyAlert = useCallback(async (title: string, message: string) => {
     if (!user || user.role !== 'admin') {
       throw new Error('Only admins can create emergency alerts');
     }
 
-    const alert: EmergencyAlert = {
-      id: Date.now().toString(),
+    const timestamp = new Date().toISOString();
+    const alertData: Omit<EmergencyAlert, 'id'> = {
       title,
       message,
-      createdAt: new Date().toISOString(),
+      createdAt: timestamp,
       createdBy: user.id,
     };
 
-    setEmergencyAlerts(prev => [alert, ...prev]);
-    return alert;
+    try {
+      const id = await createEmergencyAlertInDb(alertData);
+      const newAlert: EmergencyAlert = { id, ...alertData };
+      setEmergencyAlerts(prev => [newAlert, ...prev]);
+      return newAlert;
+    } catch (error) {
+      console.error("Failed to create emergency alert", error);
+      throw error;
+    }
   }, [user]);
 
   const getNotificationById = useCallback((id: string) => {
@@ -110,6 +184,8 @@ export const [NotificationsProvider, useNotifications] = createContextHook(() =>
   return {
     notifications,
     emergencyAlerts,
+    loading,
+    refreshNotifications,
     createNotification,
     updateNotificationStatus,
     updateNotification,

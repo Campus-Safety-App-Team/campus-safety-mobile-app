@@ -1,20 +1,20 @@
-import { useState, useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  RefreshControl,
-} from 'react-native';
-import { useRouter, Stack, Href } from 'expo-router';
-import { Search, Filter, HeartPulse, ShieldAlert, Leaf, SearchIcon, Wrench, Settings } from 'lucide-react-native';
-import { useNotifications } from '@/contexts/notifications';
-import { useAuth } from '@/contexts/auth';
-import { Notification, NotificationType, NotificationStatus } from '@/types';
-import { NOTIFICATION_TYPES, STATUS_COLORS, STATUS_LABELS } from '@/constants/notifications';
 import Colors from '@/constants/colors';
+import { NOTIFICATION_TYPES, STATUS_COLORS, STATUS_LABELS } from '@/constants/notifications';
+import { useAuth } from '@/contexts/auth';
+import { useNotifications } from '@/contexts/notifications';
+import { Notification, NotificationStatus, NotificationType } from '@/types';
+import { Href, Stack, useRouter } from 'expo-router';
+import { Filter, HeartPulse, Leaf, Search, SearchIcon, Settings, ShieldAlert, Wrench } from 'lucide-react-native';
+import { useMemo, useState } from 'react';
+import {
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 const ICON_MAP = {
   health: HeartPulse,

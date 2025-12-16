@@ -1,23 +1,23 @@
-import { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import * as Location from 'expo-location';
-import * as ImagePicker from 'expo-image-picker';
-import { HeartPulse, ShieldAlert, Leaf, Search, Wrench, MapPin, Camera, Check } from 'lucide-react-native';
+import Colors from '@/constants/colors';
+import { NOTIFICATION_TYPES } from '@/constants/notifications';
 import { useNotifications } from '@/contexts/notifications';
 import { NotificationType } from '@/types';
-import { NOTIFICATION_TYPES } from '@/constants/notifications';
-import Colors from '@/constants/colors';
+import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import { Camera, Check, HeartPulse, Leaf, MapPin, Search, ShieldAlert, Wrench } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 const ICON_MAP = {
   health: HeartPulse,
@@ -65,7 +65,9 @@ export default function CreateNotificationScreen() {
           return;
         }
 
-        const currentLocation = await Location.getCurrentPositionAsync({});
+        const currentLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Highest,
+        });
         const [address] = await Location.reverseGeocodeAsync({
           latitude: currentLocation.coords.latitude,
           longitude: currentLocation.coords.longitude,
@@ -122,7 +124,7 @@ export default function CreateNotificationScreen() {
     try {
       setIsSubmitting(true);
 
-      createNotification({
+      await createNotification({
         type: selectedType,
         title: title.trim(),
         description: description.trim(),
@@ -241,8 +243,8 @@ export default function CreateNotificationScreen() {
               {isLoadingLocation
                 ? 'Getting location...'
                 : location
-                ? location.address || 'Location captured'
-                : 'Get Current Location'}
+                  ? location.address || 'Location captured'
+                  : 'Get Current Location'}
             </Text>
           </TouchableOpacity>
           {location && (

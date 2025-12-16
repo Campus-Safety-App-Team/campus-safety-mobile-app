@@ -1,8 +1,16 @@
+import { auth } from '@/config/firebaseConfig';
+import { createUserProfile, getUserProfile } from '@/services/database';
+import { NotificationPreferences, User } from '@/types';
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  createUserWithEmailAndPassword,
+  User as FirebaseUser,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut
+} from 'firebase/auth';
 import { useCallback, useEffect, useState } from 'react';
-import { User, NotificationPreferences } from '@/types';
-import { MOCK_USERS } from '@/mocks/data';
 
 interface AuthState {
   user: User | null;
@@ -24,51 +32,52 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   });
 
   useEffect(() => {
-    loadStoredAuth();
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+      if (firebaseUser) {
+        try {
+          // Fetch additional user details from Firestore
+          const userProfile = await getUserProfile(firebaseUser.uid);
+
+          if (userProfile) {
+            setState(prev => ({
+              ...prev,
+              user: userProfile,
+              isAuthenticated: true,
+              isLoading: false,
+            }));
+          } else {
+            // Fallback if profile doesn't exist (shouldn't happen with our register flow)
+            console.warn("User profile not found for", firebaseUser.uid);
+            setState(prev => ({ ...prev, user: null, isAuthenticated: false, isLoading: false }));
+          }
+        } catch (error) {
+          console.error("Error fetching user profile:", error);
+          setState(prev => ({ ...prev, user: null, isAuthenticated: false, isLoading: false }));
+        }
+      } else {
+        setState(prev => ({ ...prev, user: null, isAuthenticated: false, isLoading: false }));
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
-
-  const loadStoredAuth = async () => {
-    try {
-      const [storedUser, storedPrefs] = await Promise.all([
-        AsyncStorage.getItem('user'),
-        AsyncStorage.getItem('preferences'),
-      ]);
-
-      setState({
-        user: storedUser ? JSON.parse(storedUser) : null,
-        isAuthenticated: !!storedUser,
-        isLoading: false,
-        preferences: storedPrefs ? JSON.parse(storedPrefs) : {
-          pushEnabled: true,
-          emailEnabled: true,
-          emergencyAlerts: true,
-        },
-      });
-    } catch (error) {
-      console.error('Failed to load auth:', error);
-      setState(prev => ({ ...prev, isLoading: false }));
-    }
-  };
 
   const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const user = MOCK_USERS.find(u => u.email === email);
-
-      if (!user || password !== 'password123') {
-        return { success: false, error: 'Invalid email or password' };
-      }
-
-      await AsyncStorage.setItem('user', JSON.stringify(user));
-      setState(prev => ({
-        ...prev,
-        user,
-        isAuthenticated: true,
-      }));
-
+      await signInWithEmailAndPassword(auth, email, password);
+      // State updates automatically via onAuthStateChanged
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
-      return { success: false, error: 'An error occurred during login' };
+      let errorMessage = 'An error occurred during login';
+      if (error.code === 'auth/invalid-credential') {
+        errorMessage = 'Invalid email or password';
+      } else if (error.code === 'auth/user-not-found') {
+        errorMessage = 'User not found';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Invalid password';
+      }
+      return { success: false, error: errorMessage };
     }
   }, []);
 
@@ -79,44 +88,42 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     department: string
   ): Promise<{ success: boolean; error?: string }> => {
     try {
-      const existingUser = MOCK_USERS.find(u => u.email === email);
-      if (existingUser) {
-        return { success: false, error: 'Email already registered' };
-      }
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
 
       const newUser: User = {
-        id: Date.now().toString(),
+        id: firebaseUser.uid,
         email,
         fullName,
         department,
-        role: 'user',
+        role: 'user', // Default role
         createdAt: new Date().toISOString(),
       };
 
-      MOCK_USERS.push(newUser);
-      await AsyncStorage.setItem('user', JSON.stringify(newUser));
+      // Create profile in Firestore
+      await createUserProfile(newUser);
 
-      setState(prev => ({
-        ...prev,
-        user: newUser,
-        isAuthenticated: true,
-      }));
+      // State will update via onAuthStateChanged listener, but we might want to manually set it 
+      // locally if the listener is slower than the nav transition.
+      // For now, relying on the listener is safer to ensure data consistency.
 
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Registration error:', error);
-      return { success: false, error: 'An error occurred during registration' };
+      let errorMessage = 'An error occurred during registration';
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = 'Email already registered';
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = 'Password is too weak';
+      }
+      return { success: false, error: errorMessage };
     }
   }, []);
 
   const logout = useCallback(async () => {
     try {
-      await AsyncStorage.removeItem('user');
-      setState(prev => ({
-        ...prev,
-        user: null,
-        isAuthenticated: false,
-      }));
+      await signOut(auth);
+      // State updates automatically via onAuthStateChanged
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -136,18 +143,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const updateProfile = useCallback(async (updates: Partial<User>) => {
     try {
-      if (!state.user) return;
-
-      const updatedUser = { ...state.user, ...updates };
-      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
-      setState(prev => ({
-        ...prev,
-        user: updatedUser,
-      }));
+      // Implementation for updating profile in Firestore could go here
+      // For now, implementing local update if needed, but ideally should sync with DB
+      console.warn("Update profile not fully implemented with Firestore sync yet");
     } catch (error) {
       console.error('Failed to update profile:', error);
     }
-  }, [state.user]);
+  }, []);
 
   return {
     ...state,

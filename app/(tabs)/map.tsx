@@ -1,13 +1,13 @@
-import { useState, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import { useRouter, Href } from 'expo-router';
-import * as Location from 'expo-location';
-import { HeartPulse, ShieldAlert, Leaf, Search, Wrench, MapPin } from 'lucide-react-native';
+import Colors from '@/constants/colors';
+import { NOTIFICATION_TYPES } from '@/constants/notifications';
 import { useNotifications } from '@/contexts/notifications';
 import { NotificationType } from '@/types';
-import { NOTIFICATION_TYPES } from '@/constants/notifications';
-import Colors from '@/constants/colors';
+import * as Location from 'expo-location';
+import { Href, useRouter } from 'expo-router';
+import { HeartPulse, Leaf, MapPin, RefreshCw, Search, ShieldAlert, Wrench } from 'lucide-react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 
 const ICON_MAP = {
   health: HeartPulse,
@@ -26,7 +26,7 @@ const ATAUNI_LOCATION = {
 
 export default function MapScreen() {
   const router = useRouter();
-  const { notifications } = useNotifications();
+  const { notifications, refreshNotifications, loading } = useNotifications();
   const [selectedType, setSelectedType] = useState<NotificationType | 'all'>('all');
 
   useEffect(() => {
@@ -84,6 +84,17 @@ export default function MapScreen() {
           );
         })}
       </MapView>
+
+      {/* Header Controls */}
+      <View style={styles.headerControls}>
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={refreshNotifications}
+          disabled={loading}
+        >
+          <RefreshCw size={20} color={Colors.light.tint} />
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.filterContainer}>
         <TouchableOpacity
@@ -162,11 +173,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  headerControls: {
+    position: 'absolute',
+    top: 60, // Adjusted for safe area roughly
+    right: 16,
+    zIndex: 10,
+  },
+  refreshButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.light.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
   filterContainer: {
     position: 'absolute',
-    top: 16,
+    top: 60, // Align with refresh button
     left: 16,
-    right: 16,
+    right: 70, // Leave space for refresh button
     flexDirection: 'row',
     gap: 8,
   },
