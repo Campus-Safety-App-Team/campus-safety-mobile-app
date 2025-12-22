@@ -43,7 +43,7 @@ The app follows the Atatürk University visual identity:
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yildizramazan/campus-safety-app.git
+   git clone https://github.com/Campus-Safety-App-Team/campus-safety-mobile-app.git
    cd campus-safety-app
    ```
 
